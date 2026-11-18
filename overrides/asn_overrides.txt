@@ -1,0 +1,7 @@
+# Manual ASN corrections, applied after every other asn_fix layer.
+# Format: CIDR ASN [org...]   (ASN may be written as 55990 or AS55990)
+# Entries of the same address family must not overlap. Empty org is filled
+# from asn_fix.asn_names when the ASN is listed there.
+#
+# Example:
+# 114.116.0.0/16 AS55990 Huawei Cloud Service data center

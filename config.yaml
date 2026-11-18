@@ -1,0 +1,128 @@
+source:
+  ipv4: ./data/ipv4_source.txt
+  ipv6: ./data/ipv6_source.txt
+  asn: ./data/GeoLite2-ASN.mmdb
+
+# Corrections on top of source.asn, applied in this order. `make download`
+# fetches every file below; set a path to "" / remove an entry to disable it.
+asn_fix:
+  # Complete China IP set = union of these files. Delegated stats contribute
+  # filter.country_code rows (mainland only; HK/MO/TW have their own codes);
+  # the others are CIDR lists. china-operator-ip is BGP-classified (CN origin
+  # reached via trusted CN carriers) plus unannounced RIR-CN space.
+  china_ip:
+    - ./data/delegated-apnic-latest
+    - ./data/china-operator-ip-china.txt
+    - ./data/china-operator-ip-china6.txt
+    - ./data/metowolf-china.txt
+  # BGP origin ASN from iptoasn.com (hourly, PDDL). Inside china_ip it replaces
+  # GeoLite2 wherever the address is routed; unrouted addresses keep GeoLite2.
+  bgp: [./data/ip2asn-v4.tsv.gz, ./data/ip2asn-v6.tsv.gz]
+  # DB-IP ASN Lite (CC BY 4.0). Only fills addresses still without ASN.
+  fallback_mmdb: ./data/dbip-asn-lite.mmdb
+  # missuo/ASN-China ASN.China.list; fills empty org names of overrides.
+  asn_names: ./data/ASN.China.list
+  # Disabled: BGP origin is authoritative. Providers rewrite carrier-announced
+  # cloud ranges to the cloud's own ASN (e.g. 114.116.220.42 AS23724 -> AS55990);
+  # uncomment only if you want operator rather than origin ASNs.
+  # Inside a listed CIDR an upstream ASN outside `asns` is replaced by asns[0].
+  # providers:
+  #   - name: huawei
+  #     files: [./data/providers/huawei-cidr-ipv4.txt, ./data/providers/huawei-cidr-ipv6.txt]
+  #     asns: [55990, 136907, 63727, 63655]
+  #     org: Huawei Cloud Service data center
+  #   - name: aliyun
+  #     files: [./data/providers/aliyun-cidr-ipv4.txt, ./data/providers/aliyun-cidr-ipv6.txt]
+  #     asns: [37963, 45102, 24429, 134963]
+  #   - name: tencent
+  #     files: [./data/providers/tencent-cidr-ipv4.txt, ./data/providers/tencent-cidr-ipv6.txt]
+  #     asns: [45090, 132203, 133478]
+  #   - name: baidu
+  #     files: [./data/providers/baidu-cidr-ipv4.txt, ./data/providers/baidu-cidr-ipv6.txt]
+  #     asns: [38365, 55967]
+  #   - name: jdcloud
+  #     files: [./data/providers/jdcloud-cidr-ipv4.txt, ./data/providers/jdcloud-cidr-ipv6.txt]
+  #     asns: [137753, 137787, 131486]
+  #   - name: ksyun
+  #     files: [./data/providers/ksyun-cidr-ipv4.txt, ./data/providers/ksyun-cidr-ipv6.txt]
+  #     asns: [59019]
+  #   - name: ucloud
+  #     files: [./data/providers/ucloud-cidr-ipv4.txt, ./data/providers/ucloud-cidr-ipv6.txt]
+  #     asns: [59077, 135377]
+  # Hand-maintained "CIDR ASN [org]" list (versioned); always wins.
+  overrides: ./overrides/asn_overrides.txt
+
+output:
+  file: ./output/China-City-ASN.mmdb
+
+# Writes a "cloud" field for ranges published by cloud/IDC providers
+# (axpwx/IP-Data provider/*, metowolf/iplist data/isp/*). Independent of ASN:
+# 114.116.220.42 keeps BGP origin AS23724 and gets cloud=华为云.
+# Earlier entries win where lists overlap; keep the catch-all IDC list last.
+cloud:
+  - name: 阿里云
+    files: [./data/providers/aliyun-cidr-ipv4.txt, ./data/providers/aliyun-cidr-ipv6.txt, ./data/providers/metowolf-aliyun.txt]
+  - name: 腾讯云
+    files: [./data/providers/tencent-cidr-ipv4.txt, ./data/providers/tencent-cidr-ipv6.txt, ./data/providers/metowolf-tencent.txt]
+  - name: 华为云
+    files: [./data/providers/huawei-cidr-ipv4.txt, ./data/providers/huawei-cidr-ipv6.txt, ./data/providers/metowolf-huawei.txt]
+  - name: 百度智能云
+    files: [./data/providers/baidu-cidr-ipv4.txt, ./data/providers/baidu-cidr-ipv6.txt, ./data/providers/metowolf-baidu.txt]
+  - name: 京东云
+    files: [./data/providers/jdcloud-cidr-ipv4.txt, ./data/providers/jdcloud-cidr-ipv6.txt]
+  - name: 金山云
+    files: [./data/providers/ksyun-cidr-ipv4.txt, ./data/providers/ksyun-cidr-ipv6.txt, ./data/providers/metowolf-ksyun.txt]
+  - name: UCloud
+    files: [./data/providers/ucloud-cidr-ipv4.txt, ./data/providers/ucloud-cidr-ipv6.txt, ./data/providers/metowolf-ucloud.txt]
+  - name: 火山引擎
+    files: [./data/providers/metowolf-bytedance.txt]
+  - name: AWS
+    files: [./data/providers/aws-cidr-ipv4.txt, ./data/providers/aws-cidr-ipv6.txt]
+  - name: Azure
+    files: [./data/providers/azure-cidr-ipv4.txt, ./data/providers/azure-cidr-ipv6.txt]
+  # All IDC/cloud ranges known to axpwx/IP-Data (BGP-derived).
+  - name: IDC
+    files: [./data/providers/all-cidr-ipv4.txt, ./data/providers/all-cidr-ipv6.txt]
+
+filter:
+  # Written to country.iso_code / country.names.zh-CN in every record.
+  country_code: CN
+  # Must equal the 4th column of the source file. ip2region-xdb writes exactly
+  # "中国" for mainland rows and "中国香港"/"中国澳门"/"中国台湾" for HK/MO/TW.
+  country_name: 中国
+  # Defensive: drop rows whose province starts with one of these prefixes.
+  exclude_provinces: [香港, 澳门, 台湾]
+  # 上游只精确到省级时 city 为空。直辖市省市同名，用省份名补齐 city，
+  # 便于 Nginx 按 "北京市|北京市" 匹配。设为 [] 可关闭。
+  city_from_province: [北京市, 上海市, 天津市, 重庆市]
+  include_ipv4: true
+  include_ipv6: true
+
+build:
+  # false: abort on malformed lines / overlapping ranges / reserved networks.
+  skip_invalid_records: false
+  # Keep city sub-ranges that no ASN network covers (written without ASN fields).
+  preserve_city_without_asn: true
+  record_size: 28
+  include_reserved_networks: false
+  database_type: China-City-ASN
+
+validate:
+  # Merged ranges per address family whose first/last IP are looked up after writing.
+  sample_size: 2000
+  # Quality gates: abort if the mainland range count drops below these.
+  min_ipv4_ranges: 0
+  min_ipv6_ranges: 0
+  # Known-IP regression checks. Empty fields / missing asn are not compared.
+  checks:
+    - ip: 8.8.8.8
+      absent: true
+    - ip: 1.1.1.1
+      absent: true
+    # Huawei Cloud ECS announced by China Telecom IDC; GeoLite2-ASN says AS4808.
+    - ip: 114.116.220.42
+      asn: 23724
+      cloud: 华为云
+  #  - ip: 114.114.114.114
+  #    province: 江苏省
+  #    asn: 21859

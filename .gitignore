@@ -1,0 +1,5 @@
+/china-geoip-mmdb
+/data/*
+!/data/.gitkeep
+/output/*
+!/output/.gitkeep

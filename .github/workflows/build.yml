@@ -1,0 +1,85 @@
+name: build
+
+on:
+  schedule:
+    - cron: "30 20 * * *" # 04:30 Asia/Shanghai
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["**.go", "go.mod", "go.sum", "config.yaml", "Makefile", "overrides/**", ".github/workflows/build.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build
+  cancel-in-progress: false
+
+env:
+  # GitHub runners reach github.com directly; no proxy prefix.
+  GH_PROXY: ""
+  KEEP_RELEASES: 30
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      IPINFO_TOKEN: ${{ secrets.IPINFO_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: make test
+
+      - name: Download data
+        run: make download GH_PROXY=
+
+      - name: Build database
+        run: make run
+
+      - name: Spot-check against ipinfo.io
+        if: env.IPINFO_TOKEN != ''
+        run: make verify N=300 MIN=90
+
+      - name: Prepare release assets
+        id: assets
+        run: |
+          tag="$(date -u +%Y%m%d)"
+          cp output/China-City-ASN.mmdb China-City-ASN.mmdb
+          sha256sum China-City-ASN.mmdb > China-City-ASN.mmdb.sha256
+          {
+            echo "Built $(date -u +%Y-%m-%dT%H:%M:%SZ) from ${GITHUB_SHA::7}."
+            echo
+            echo "Sources: ip2region-xdb (GeoCN), iptoasn.com (BGP origin ASN), APNIC delegated stats,"
+            echo "gaoyifan/china-operator-ip, metowolf/iplist, axpwx/IP-Data, missuo/ASN-China,"
+            echo "GeoLite2-ASN by MaxMind (https://www.maxmind.com), IP to ASN Lite by DB-IP (https://db-ip.com, CC BY 4.0)."
+          } > notes.md
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.assets.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" China-City-ASN.mmdb China-City-ASN.mmdb.sha256 --clobber
+            gh release edit "$TAG" --notes-file notes.md --latest
+          else
+            gh release create "$TAG" China-City-ASN.mmdb China-City-ASN.mmdb.sha256 \
+              --title "China-City-ASN $TAG" --notes-file notes.md --latest
+          fi
+
+      - name: Prune old releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 1000 --json tagName,createdAt \
+            --jq "sort_by(.createdAt) | reverse | .[${KEEP_RELEASES}:] | .[].tagName" |
+          while read -r tag; do
+            gh release delete "$tag" --cleanup-tag --yes
+          done
